@@ -71,6 +71,8 @@ public abstract class AbstractClientChannel extends AbstractChannel implements C
 
     protected InputStream in;
     protected OutputStream invertedIn;
+    protected IoOutputStream invertedInIo;
+
     protected OutputStream out;
     protected InputStream invertedOut;
     protected OutputStream err;
@@ -146,6 +148,11 @@ public abstract class AbstractClientChannel extends AbstractChannel implements C
     }
 
     @Override
+    public IoOutputStream getInvertedInIo() {
+        return invertedInIo;
+    }
+
+    @Override
     public void setIn(InputStream in) {
         this.in = in;
     }
@@ -195,7 +202,7 @@ public abstract class AbstractClientChannel extends AbstractChannel implements C
                     // ChannelPipedInputStream#writerClosed = false
                     // which leads to an IOException("Pipe closed") when reading.
                     IoUtils.closeQuietly(in, out, err);
-                    IoUtils.closeQuietly(invertedIn, invertedOut, invertedErr);
+                    IoUtils.closeQuietly(invertedIn, invertedOut, invertedErr, invertedInIo);
                 })
                 .parallel(asyncIn, asyncOut, asyncErr)
                 .close(super.getInnerCloseable())

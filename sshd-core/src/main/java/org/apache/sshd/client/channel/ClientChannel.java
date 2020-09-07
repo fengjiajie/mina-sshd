@@ -75,6 +75,8 @@ public interface ClientChannel extends Channel, ClientSessionHolder {
      */
     OutputStream getInvertedIn();
 
+    IoOutputStream getInvertedInIo();
+
     InputStream getInvertedOut();
 
     InputStream getInvertedErr();

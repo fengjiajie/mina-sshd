@@ -36,6 +36,7 @@ import org.apache.sshd.common.future.CloseFuture;
 import org.apache.sshd.common.session.Session;
 import org.apache.sshd.common.util.ValidateUtils;
 import org.apache.sshd.common.util.buffer.Buffer;
+import org.apache.sshd.common.util.buffer.ByteArrayBuffer;
 import org.apache.sshd.common.util.threads.CloseableExecutorService;
 import org.apache.sshd.common.util.threads.ThreadUtils;
 
@@ -194,8 +195,8 @@ public class ChannelSession extends AbstractClientChannel {
 
                 session.resetIdleTimeout();
                 if (len > 0) {
-                    invertedIn.write(buffer, 0, len);
-                    invertedIn.flush();
+                    Buffer writeBuffer = new ByteArrayBuffer(buffer.length, false);
+                    invertedInIo.writePacket(writeBuffer);
                 }
             }
 

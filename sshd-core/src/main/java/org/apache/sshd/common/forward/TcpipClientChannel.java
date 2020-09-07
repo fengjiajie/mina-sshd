@@ -33,8 +33,10 @@ import org.apache.sshd.common.Closeable;
 import org.apache.sshd.common.NamedResource;
 import org.apache.sshd.common.SshConstants;
 import org.apache.sshd.common.SshException;
-import org.apache.sshd.common.channel.ChannelOutputStream;
+import org.apache.sshd.common.channel.BufferedIoOutputStream;
+import org.apache.sshd.common.channel.ChannelAsyncOutputStream;
 import org.apache.sshd.common.channel.Window;
+import org.apache.sshd.common.future.CloseFuture;
 import org.apache.sshd.common.io.IoSession;
 import org.apache.sshd.common.session.Session;
 import org.apache.sshd.common.util.ValidateUtils;
@@ -164,9 +166,18 @@ public class TcpipClientChannel extends AbstractClientChannel implements Forward
             throw new IllegalArgumentException("Asynchronous streaming isn't supported yet on this channel");
         }
 
-        out = new ChannelOutputStream(
-                this, getRemoteWindow(), log, SshConstants.SSH_MSG_CHANNEL_DATA, true);
-        invertedIn = out;
+        invertedInIo = new BufferedIoOutputStream("tcpip client channel",
+            new ChannelAsyncOutputStream(this, SshConstants.SSH_MSG_CHANNEL_DATA) {
+                @Override
+                protected CloseFuture doCloseGracefully() {
+                    try {
+                        sendEof();
+                    } catch (IOException e) {
+                        getSession().exceptionCaught(e);
+                    }
+                    return super.doCloseGracefully();
+                }
+            });
     }
 
     @Override
@@ -188,6 +199,7 @@ public class TcpipClientChannel extends AbstractClientChannel implements Forward
     @Override
     protected Closeable getInnerCloseable() {
         return builder()
+                .close(invertedInIo)
                 .sequential(serverSession, super.getInnerCloseable())
                 .build();
     }

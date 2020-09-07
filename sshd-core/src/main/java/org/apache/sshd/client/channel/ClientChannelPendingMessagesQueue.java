@@ -35,6 +35,7 @@ import java.util.function.Consumer;
 import org.apache.sshd.client.future.DefaultOpenFuture;
 import org.apache.sshd.client.future.OpenFuture;
 import org.apache.sshd.common.future.SshFutureListener;
+import org.apache.sshd.common.io.IoOutputStream;
 import org.apache.sshd.common.session.Session;
 import org.apache.sshd.common.util.buffer.Buffer;
 import org.apache.sshd.common.util.logging.AbstractLoggingBean;
@@ -170,9 +171,8 @@ public class ClientChannelPendingMessagesQueue
                 throw new EOFException("Client session is closed/closing");
             }
 
-            OutputStream outputStream = channel.getInvertedIn();
-            outputStream.write(buffer.array(), buffer.rpos(), buffer.available());
-            outputStream.flush();
+            IoOutputStream invertedInIo = channel.getInvertedInIo();
+            invertedInIo.writePacket(buffer);
         } catch (IOException e) {
             if (log.isDebugEnabled()) {
                 log.debug("writeMessage({}) failed ({}) to output message: {}",

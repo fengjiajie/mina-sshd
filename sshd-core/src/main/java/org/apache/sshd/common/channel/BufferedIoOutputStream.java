@@ -22,6 +22,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.sshd.common.Closeable;
@@ -38,6 +39,7 @@ public class BufferedIoOutputStream extends AbstractInnerCloseable implements Io
     protected final IoOutputStream out;
     protected final Queue<IoWriteFutureImpl> writes = new ConcurrentLinkedQueue<>();
     protected final AtomicReference<IoWriteFutureImpl> currentWrite = new AtomicReference<>();
+    protected final AtomicLong inFlightDataSize = new AtomicLong();
     protected final Object id;
 
     public BufferedIoOutputStream(Object id, IoOutputStream out) {
@@ -55,6 +57,7 @@ public class BufferedIoOutputStream extends AbstractInnerCloseable implements Io
             throw new EOFException("Closed - state=" + state);
         }
 
+        inFlightDataSize.getAndAdd(buffer.available());
         IoWriteFutureImpl future = new IoWriteFutureImpl(getId(), buffer);
         writes.add(future);
         startWriting();
@@ -88,6 +91,7 @@ public class BufferedIoOutputStream extends AbstractInnerCloseable implements Io
     protected void finishWrite(IoWriteFutureImpl future) {
         writes.remove(future);
         currentWrite.compareAndSet(future, null);
+        inFlightDataSize.getAndAdd(-future.getBuffer().wpos());
         try {
             startWriting();
         } catch (IOException e) {
@@ -110,5 +114,9 @@ public class BufferedIoOutputStream extends AbstractInnerCloseable implements Io
     @Override
     public String toString() {
         return getClass().getSimpleName() + "[" + out + "]";
+    }
+
+    public long getInFlightDataSize() {
+        return inFlightDataSize.get();
     }
 }

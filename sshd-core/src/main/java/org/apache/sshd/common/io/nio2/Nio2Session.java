@@ -18,6 +18,17 @@
  */
 package org.apache.sshd.common.io.nio2;
 
+import org.apache.sshd.common.FactoryManager;
+import org.apache.sshd.common.RuntimeSshException;
+import org.apache.sshd.common.future.CloseFuture;
+import org.apache.sshd.common.io.IoHandler;
+import org.apache.sshd.common.io.IoSession;
+import org.apache.sshd.common.io.IoWriteFuture;
+import org.apache.sshd.common.util.GenericUtils;
+import org.apache.sshd.common.util.Readable;
+import org.apache.sshd.common.util.buffer.Buffer;
+import org.apache.sshd.common.util.closeable.AbstractCloseable;
+
 import java.io.IOException;
 import java.io.WriteAbortedException;
 import java.net.SocketAddress;
@@ -30,19 +41,9 @@ import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-
-import org.apache.sshd.common.FactoryManager;
-import org.apache.sshd.common.RuntimeSshException;
-import org.apache.sshd.common.future.CloseFuture;
-import org.apache.sshd.common.io.IoHandler;
-import org.apache.sshd.common.io.IoSession;
-import org.apache.sshd.common.io.IoWriteFuture;
-import org.apache.sshd.common.util.GenericUtils;
-import org.apache.sshd.common.util.Readable;
-import org.apache.sshd.common.util.buffer.Buffer;
-import org.apache.sshd.common.util.closeable.AbstractCloseable;
 
 /**
  * @author <a href="mailto:dev@mina.apache.org">Apache MINA SSHD Project</a>
@@ -378,7 +379,49 @@ public class Nio2Session extends AbstractCloseable implements IoSession {
         exceptionCaught(exc);
     }
 
+    private AtomicBoolean needSuspend = new AtomicBoolean(false);
+
+    private static class DoReadCycleParamPair {
+        ByteBuffer buffer;
+        Nio2CompletionHandler<Integer, Object> completion;
+    }
+
+    private AtomicReference<DoReadCycleParamPair> doReadCycleParamTmpPair = new AtomicReference<>(null);
+
+    public void startSuspendReadCycle() {
+        needSuspend.set(true);
+    }
+
+    public void tryResumeReadCycle() {
+        DoReadCycleParamPair doReadCycleParamPair = doReadCycleParamTmpPair.getAndSet(null);
+        if (doReadCycleParamPair != null) {
+            log.debug("resume read cycle ..");
+            needSuspend.set(false);
+            doReadCycle(doReadCycleParamPair.buffer, doReadCycleParamPair.completion);
+        }
+    }
+
     protected void doReadCycle(ByteBuffer buffer, Nio2CompletionHandler<Integer, Object> completion) {
+        if (needSuspend.get()) {
+            log.debug("do suspend ...");
+            if (doReadCycleParamTmpPair.get() != null) {
+                log.info("something wrong ......");
+                System.exit(1);
+            }
+            DoReadCycleParamPair doReadCycleParamPair = new DoReadCycleParamPair();
+            doReadCycleParamPair.buffer = buffer;
+            doReadCycleParamPair.completion = completion;
+            if (!doReadCycleParamTmpPair.compareAndSet(null, doReadCycleParamPair)) {
+                log.error("cas failed ......");
+                System.exit(1);
+            }
+            return;
+        }
+        if (doReadCycleParamTmpPair.get() != null) {
+            log.error("error............");
+            System.exit(3);
+        }
+
         AsynchronousSocketChannel socket = getSocket();
         long readTimeout = manager.getLongProperty(
                 FactoryManager.NIO2_READ_TIMEOUT, FactoryManager.DEFAULT_NIO2_READ_TIMEOUT);

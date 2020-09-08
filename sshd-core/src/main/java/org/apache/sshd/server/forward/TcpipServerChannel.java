@@ -38,12 +38,15 @@ import org.apache.sshd.common.channel.Window;
 import org.apache.sshd.common.channel.exception.SshChannelOpenException;
 import org.apache.sshd.common.forward.ForwardingTunnelEndpointsProvider;
 import org.apache.sshd.common.future.CloseFuture;
+import org.apache.sshd.common.future.SshFutureListener;
 import org.apache.sshd.common.io.IoConnectFuture;
 import org.apache.sshd.common.io.IoConnector;
 import org.apache.sshd.common.io.IoHandler;
 import org.apache.sshd.common.io.IoOutputStream;
 import org.apache.sshd.common.io.IoServiceFactory;
 import org.apache.sshd.common.io.IoSession;
+import org.apache.sshd.common.io.IoWriteFuture;
+import org.apache.sshd.common.io.nio2.Nio2Session;
 import org.apache.sshd.common.session.Session;
 import org.apache.sshd.common.util.GenericUtils;
 import org.apache.sshd.common.util.Readable;
@@ -221,7 +224,21 @@ public class TcpipServerChannel extends AbstractServerChannel implements Forward
                 } else {
                     Buffer buffer = new ByteArrayBuffer(message.available(), false);
                     buffer.putBuffer(message);
-                    out.writePacket(buffer);
+                    IoWriteFuture ioWriteFuture = out.writePacket(buffer);
+                    ioWriteFuture.addListener(new SshFutureListener<IoWriteFuture>() {
+                        @Override
+                        public void operationComplete(IoWriteFuture future) {
+                            // just for test
+                            Nio2Session ioSession = (Nio2Session) getIoSession();
+                            ioSession.tryResumeReadCycle();
+                        }
+                    });
+                    BufferedIoOutputStream bufferedIoOutputStream = (BufferedIoOutputStream) out;
+                    long inFlightDataSize = bufferedIoOutputStream.getInFlightDataSize();
+                    if(inFlightDataSize > 1_000_000) {
+                        Nio2Session ioSession = (Nio2Session) getIoSession();
+                        ioSession.startSuspendReadCycle();
+                    }
                 }
             }
 
